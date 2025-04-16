@@ -35,6 +35,8 @@
 #include <iostream>
 #include <thread>
 
+#include <rpc_server.hpp>
+
 using namespace args;
 using namespace std;
 
@@ -43,7 +45,7 @@ namespace tev {
 // Image viewer is a static variable to allow other parts of the program to easily schedule operations onto the main nanogui thread loop. In
 // a truly modular program, this would never be required, but OpenGL's state-machine nature throws a wrench into modularity. Currently, the
 // only use case is the destruction of OpenGL textures, which _must_ happen on the thread on which the GL context is "current".
-static ImageViewer* sImageViewer = nullptr;
+ImageViewer* sImageViewer = nullptr;
 static atomic<bool> imageViewerIsReady = false;
 
 void scheduleToMainThread(const std::function<void()>& fun) {
@@ -134,6 +136,19 @@ static void handleIpcPacket(const IpcPacket& packet, const std::shared_ptr<Backg
             });
 
             sImageViewer->redraw();
+            break;
+        }
+
+        case IpcPacket::RemoteProcedureCall: {
+            std::unique_lock lock { sImageViewer->mDrawMutex };
+            rpc::server.client = packet.socket();
+            auto info = packet.interpretAsRemoteProcedureCall();
+            auto response = rpc::server.receive({
+                .data = info.data.data(),
+                .size = info.data.size(),
+            });
+            int bytesSent = int(send(packet.socket(), response.data, response.size, 0));
+            rpc_printf("sent %d bytes back\n", bytesSent);
             break;
         }
 
@@ -456,6 +471,12 @@ static int mainFunc(const vector<string>& arguments) {
     // user starts another instance of tev while one is already running. Note, that this behavior can be overridden by the -n flag, so not
     // _all_ secondary instances send their paths to the primary instance.
     thread ipcThread = thread{[&]() {
+        rpc::server.send = [](auto client, auto packet) {
+            ::send(client, packet.data, packet.size, 0);
+            /// TODO: Support return values of lambda calls, error handling, ...
+            return rpc::packet { .data = &rpc::RPC_MSGTYPE_RETURN, .size = 1 };
+        };
+
         try {
             while (!shuttingDown()) {
                 // Attempt to become primary instance in case the primary instance got closed at some point. Attempt this with a reasonably
@@ -471,7 +492,7 @@ static int mainFunc(const vector<string>& arguments) {
                     } catch (const runtime_error& e) { tlog::warning() << "Malformed IPC packet: " << e.what(); }
                 });
 
-                this_thread::sleep_for(10ms);
+                this_thread::sleep_for(100us);
             }
         } catch (const runtime_error& e) { tlog::warning() << "Uncaught exception in IPC thread: " << e.what(); }
     }};

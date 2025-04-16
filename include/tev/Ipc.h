@@ -26,6 +26,12 @@
 
 namespace tev {
 
+#ifdef _WIN32
+    using socket_t = SOCKET;
+#else
+    using socket_t = int;
+#endif
+
 struct IpcPacketOpenImage {
     std::string imagePath;
     std::string channelSelector;
@@ -68,6 +74,11 @@ struct IpcPacketVectorGraphics {
     std::vector<VgCommand> commands;
 };
 
+struct IpcPacketRemoteProcedureCall {
+    int32_t nBytes;
+    std::vector<uint8_t> data;
+};
+
 class IpcPacket {
 public:
     enum EType : char {
@@ -80,10 +91,13 @@ public:
         UpdateImageV3 = 6, // Adds custom striding/offset support
         OpenImageV2 = 7,   // Explicit separation of image name and channel selector
         VectorGraphics = 8,
+        RemoteProcedureCall = 9,
     };
 
     IpcPacket() = default;
-    IpcPacket(const char* data, size_t length);
+    IpcPacket(const char* data, size_t length, socket_t socket);
+
+    socket_t socket() const { return mSocket; }
 
     const char* data() const { return mPayload.data(); }
 
@@ -124,9 +138,11 @@ public:
     IpcPacketUpdateImage interpretAsUpdateImage() const;
     IpcPacketCreateImage interpretAsCreateImage() const;
     IpcPacketVectorGraphics interpretAsVectorGraphics() const;
+    IpcPacketRemoteProcedureCall interpretAsRemoteProcedureCall() const;
 
 private:
     std::vector<char> mPayload;
+    socket_t mSocket;
 
     class IStream {
     public:
@@ -244,12 +260,6 @@ private:
 
 class Ipc {
 public:
-#ifdef _WIN32
-    using socket_t = SOCKET;
-#else
-    using socket_t = int;
-#endif
-
     Ipc(const std::string& hostname = "127.0.0.1:14158");
     virtual ~Ipc();
 
@@ -273,7 +283,7 @@ private:
 
     class SocketConnection {
     public:
-        SocketConnection(Ipc::socket_t fd, const std::string& name);
+        SocketConnection(socket_t fd, const std::string& name);
 
         void service(std::function<void(const IpcPacket&)> callback);
 
@@ -282,7 +292,7 @@ private:
         bool isClosed() const;
 
     private:
-        Ipc::socket_t mSocketFd;
+        socket_t mSocketFd;
         std::string mName;
 
         // Because TCP socket recv() calls return as much data as is available (which may have the partial contents of a client-side send()

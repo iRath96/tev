@@ -61,11 +61,12 @@ enum SocketError : int {
 #endif
 };
 
-IpcPacket::IpcPacket(const char* data, size_t length) {
+IpcPacket::IpcPacket(const char* data, size_t length, socket_t socket) {
     if (length <= 0) {
         throw runtime_error{"Cannot construct an IPC packet from no data."};
     }
     mPayload.assign(data, data + length);
+    mSocket = socket;
 }
 
 void IpcPacket::setOpenImage(const string& imagePath, const string& channelSelector, bool grabFocus) {
@@ -348,7 +349,25 @@ IpcPacketVectorGraphics IpcPacket::interpretAsVectorGraphics() const {
     return result;
 }
 
-static void makeSocketNonBlocking(Ipc::socket_t socketFd) {
+IpcPacketRemoteProcedureCall IpcPacket::interpretAsRemoteProcedureCall() const {
+    IpcPacketRemoteProcedureCall result;
+    IStream payload{mPayload};
+
+    EType type;
+    payload >> type;
+    if (type != EType::RemoteProcedureCall) {
+        throw runtime_error{"Cannot interpret IPC packet as RemoteProcedureCall."};
+    }
+
+    payload >> result.nBytes;
+
+    result.data.resize(result.nBytes);
+    payload >> result.data;
+
+    return result;
+}
+
+static void makeSocketNonBlocking(socket_t socketFd) {
 #ifdef _WIN32
     u_long mode = 1;
     int ioctlsocketResult = ioctlsocket(socketFd, FIONBIO, &mode);
@@ -362,7 +381,7 @@ static void makeSocketNonBlocking(Ipc::socket_t socketFd) {
 #endif
 }
 
-static int closeSocket(Ipc::socket_t socket) {
+static int closeSocket(socket_t socket) {
 #ifdef _WIN32
     return closesocket(socket);
 #else
@@ -596,7 +615,7 @@ void Ipc::receiveFromSecondaryInstance(function<void(const IpcPacket&)> callback
     }
 }
 
-Ipc::SocketConnection::SocketConnection(Ipc::socket_t fd, const string& name) : mSocketFd{fd}, mName{name} {
+Ipc::SocketConnection::SocketConnection(socket_t fd, const string& name) : mSocketFd{fd}, mName{name} {
     TEV_ASSERT(mSocketFd != INVALID_SOCKET, "SocketConnection must receive a valid socket.");
 
     makeSocketNonBlocking(mSocketFd);
@@ -652,7 +671,7 @@ void Ipc::SocketConnection::service(function<void(const IpcPacket&)> callback) {
 
             if (processedOffset + messageLength <= mRecvOffset) {
                 // We have a full message.
-                callback(IpcPacket{messagePtr, messageLength});
+                callback(IpcPacket{messagePtr, messageLength, mSocketFd});
                 processedOffset += messageLength;
             } else {
                 // It's a partial message; we'll need to recv() more.

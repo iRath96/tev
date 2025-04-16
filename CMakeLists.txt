@@ -210,6 +210,7 @@ set(TEV_SOURCES
     include/tev/UberShader.h src/UberShader.cpp
     include/tev/VectorGraphics.h src/VectorGraphics.cpp
 
+    src/rpc.cpp
     src/main.cpp
 )
 if (MSVC)
@@ -253,6 +254,7 @@ include_directories(
     ${OPENEXR_INCLUDE_DIRS}
     ${QOI_INCLUDE}
     ${STB_INCLUDE}
+    ${RPC_INCLUDE}
     ${TINYLOGGER_INCLUDE}
     ${UTFCPP_INCLUDE}
     "${CMAKE_CURRENT_SOURCE_DIR}/include"

@@ -1217,6 +1217,12 @@ void ImageViewer::removeImage(shared_ptr<Image> image) {
         return;
     }
 
+    if (auto it = mSidebars.find(image->name()); it != mSidebars.end()) {
+        auto widget = it->second;
+        widget->parent()->remove_child(widget);
+        mSidebars.erase(it);
+    }
+
     if (mDragType == EMouseDragType::ImageButtonDrag) {
         // If we're currently dragging the to-be-removed image, stop.
         if ((size_t)id == mDraggedImageButtonId) {
@@ -1391,6 +1397,10 @@ void ImageViewer::updateImageVectorGraphics(const string& imageName, bool shallS
 }
 
 void ImageViewer::selectImage(const shared_ptr<Image>& image, bool stopPlayback) {
+    if (auto s = currentSidebar()) {
+        s->set_visible(false);
+    }
+
     if (stopPlayback) {
         mPlayButton->set_pushed(false);
     }
@@ -1431,6 +1441,10 @@ void ImageViewer::selectImage(const shared_ptr<Image>& image, bool stopPlayback)
 
     mCurrentImage = image;
     mImageCanvas->setImage(mCurrentImage);
+
+    if (auto s = currentSidebar()) {
+        s->set_visible(true);
+    }
 
     // Clear group buttons
     while (mGroupButtonContainer->child_count() > 0) {
@@ -1825,6 +1839,27 @@ void ImageViewer::saveImageDialog() {
     focusWindow();
 }
 
+nanogui::Widget* ImageViewer::getSidebar(const std::string& imageName) {
+    auto it = mSidebars.find(imageName);
+    if (it != mSidebars.end()) {
+        return it->second->child_at(0);
+    }
+
+    auto scroll = new VScrollPanel(mImageCanvas->parent());
+    auto tmp = new Widget(scroll);
+    auto sidebar = new Widget{tmp};
+    sidebar->set_layout(new BoxLayout{Orientation::Vertical, Alignment::Fill, 0, 0});
+    mSidebars.insert(std::make_pair(imageName, scroll));
+    return sidebar;
+}
+
+nanogui::VScrollPanel* ImageViewer::currentSidebar() {
+    if (!mCurrentImage) return nullptr;
+
+    auto it = mSidebars.find(mCurrentImage->name());
+    return it != mSidebars.end() ? it->second : nullptr;
+}
+
 void ImageViewer::updateFilter() {
     string filter = mFilter->value();
     string imagePart = filter;
@@ -1953,7 +1988,18 @@ void ImageViewer::updateFilter() {
 void ImageViewer::updateLayout() {
     int sidebarWidth = visibleSidebarWidth();
     int footerHeight = visibleFooterHeight();
-    mImageCanvas->set_fixed_size(m_size - nanogui::Vector2i{sidebarWidth, footerHeight});
+
+    int rightSidebarWidth = 0;
+    if (auto rightSidebar = currentSidebar()) {
+        rightSidebarWidth = 200;
+        rightSidebar->set_fixed_width(rightSidebarWidth);
+        rightSidebar->set_fixed_height(m_size.y() - footerHeight);
+
+        auto layout = rightSidebar->child_at(0)->child_at(0);
+        layout->parent()->set_height(layout->preferred_size(m_nvg_context).y());
+        layout->set_fixed_width(rightSidebarWidth);
+    }
+    mImageCanvas->set_fixed_size(m_size - nanogui::Vector2i{sidebarWidth + rightSidebarWidth, footerHeight});
     mSidebar->set_fixed_height(m_size.y() - footerHeight);
 
     mVerticalScreenSplit->set_fixed_size(m_size);

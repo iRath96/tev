@@ -159,7 +159,18 @@ public:
 
     BackgroundImagesLoader& imagesLoader() const { return *mImagesLoader; }
 
+    nanogui::Widget* getSidebar(const std::string& imageName);
+
+    std::mutex mDrawMutex;
+
+    void draw_all() override {
+        std::unique_lock lock { mDrawMutex };
+        Screen::draw_all();
+    }
+
 private:
+    nanogui::VScrollPanel* currentSidebar();
+
     void updateFilter();
     void updateLayout();
     void updateTitle();
@@ -215,6 +226,7 @@ private:
     std::shared_ptr<Image> mCurrentImage;
     std::shared_ptr<Image> mCurrentReference;
 
+    std::unordered_map<std::string, nanogui::VScrollPanel*> mSidebars;
     std::vector<std::shared_ptr<Image>> mImages;
 
     MultiGraph* mHistogram;
