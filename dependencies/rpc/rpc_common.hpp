@@ -227,9 +227,9 @@ struct writer<std::function<R (Args...)>> {
         void apply(rstream &r, wstream &w) override {
             rpc_printf("[writer] calling '%s'\n", typeinfo<F>::name().c_str());
             if constexpr (std::is_void_v<R>)
-                f(reader<Args>()(r)...);
+                std::apply(f, std::tuple { reader<Args>()(r)... });
             else
-                writer<R>()(w, f(reader<Args>()(r)...));
+                writer<R>()(w, std::apply(f, std::tuple { reader<Args>()(r)... }));
         }
     };
 

@@ -40,24 +40,26 @@ private:
     void call(R (C::*function)(Args...), rstream &r, wstream &w) {
         w.write_raw(RPC_MSGTYPE_RETURN);
         if constexpr (std::is_void_v<R>)
-            (*readArgument<C*>(r).*function)(readArgument<Args>(r)...);
+            std::apply(std::mem_fn(function), std::tuple { readArgument<C*>(r), readArgument<Args>(r)... });
         else
-            writer<std::decay_t<R>>()(w, (*readArgument<C*>(r).*function)(readArgument<Args>(r)...));
+            writer<std::decay_t<R>>()(w, std::apply(std::mem_fn(function), std::tuple { readArgument<C*>(r), readArgument<Args>(r)... }));
     }
 
     template <typename R, typename C, typename... Args>
     void call(R (C::*function)(Args...) const, rstream &r, wstream &w) {
         w.write_raw(RPC_MSGTYPE_RETURN);
         if constexpr (std::is_void_v<R>)
-            (*readArgument<const C*>(r).*function)(readArgument<Args>(r)...);
+            std::apply(std::mem_fn(function), std::tuple { readArgument<const C*>(r), readArgument<Args>(r)... });
         else
-            writer<std::decay_t<R>>()(w, (*readArgument<const C*>(r).*function)(readArgument<Args>(r)...));
+            writer<std::decay_t<R>>()(w, std::apply(std::mem_fn(function), std::tuple { readArgument<const C*>(r), readArgument<Args>(r)... }));
     }
 
     template <typename C, typename... Args>
     void construct(rstream &r, wstream &w) {
         w.write_raw(RPC_MSGTYPE_RETURN);
-        writer<C*>()(w, new C(readArgument<Args>(r)...));
+        writer<C*>()(w, std::apply([](auto&&... unpacked) {
+            return new C(std::forward<decltype(unpacked)>(unpacked)...);
+        }, std::tuple{ readArgument<Args>(r)... }));
     }
 };
 
